@@ -1,5 +1,18 @@
 include("vendored_code.jl")
 
+
+function determine_module_stack(node, modules=[])
+    if CSTParser.hasparent(node)
+        if node.head == :module
+            pushfirst!(modules, node.args[2].val)
+        end
+        # pushfirst!(modules, node.head)
+        return determine_module_stack(CSTParser.parentof(node), modules)
+    else
+        return modules
+    end
+end
+
 function find_test_detail!(node, testitems, testsetups, errors)
     node isa EXPR || return
 
@@ -89,7 +102,7 @@ function find_test_detail!(node, testitems, testsetups, errors)
                         push!(option_setup, Symbol(CSTParser.valof(j)))
                     end
                 else
-                    push!(errors, (error="Unknown keyword argument.", range=range))
+                    push!(errors, (error="Unknown keyword argument '$(CSTParser.valof(i.args[1]))'.", range=range))
                     return
                 end
             end
@@ -112,7 +125,9 @@ function find_test_detail!(node, testitems, testsetups, errors)
 
             code_range = code_pos:code_pos+child_nodes[end].span - 1 - length("begin") - length("end")
 
-            push!(testitems, (name=CSTParser.valof(node.args[3]), range=range, code_range=code_range, option_default_imports=option_default_imports, option_tags=option_tags, option_setup=option_setup))
+            module_stack = determine_module_stack(node)
+
+            push!(testitems, (name=CSTParser.valof(node.args[3]), range=range, code_range=code_range, option_default_imports=option_default_imports, option_tags=option_tags, option_setup=option_setup, module_stack=module_stack))
         end
     elseif node.head == :macrocall && length(node.args)>0 && CSTParser.valof(node.args[1]) == "@testsetup"
         pos = 1 + get_file_loc(node)[2]

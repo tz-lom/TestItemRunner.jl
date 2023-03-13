@@ -63,6 +63,10 @@ end
     @test TestItemRunner.compute_line_column(content, 11) == (line=3, column=3)
 end
 
+# @testitem "inline_tests_should_have_access_to_its_module" begin
+#     @test compute_line_column(content, 1) == (line=1, column=1)
+# end
+
 struct TestSetupModuleSet
     setupmodule::Module
     modules::Set{Symbol}
@@ -81,7 +85,7 @@ function ensure_evaled(test_setup_module_set, filename, code, name, line, column
     return
 end
 
-function run_testitem(filepath, use_default_usings, setups, package_name, original_code, line, column, test_setup_module_set)
+function run_testitem(filepath, use_default_usings, setups, package_name, original_code, line, column, test_setup_module_set, module_stack)
     mod = Core.eval(Main, :(module $(gensym()) end))
 
     if use_default_usings
@@ -90,11 +94,17 @@ function run_testitem(filepath, use_default_usings, setups, package_name, origin
         if package_name!=""
             Core.eval(mod, :(using $(Symbol(package_name))))
         end
+
+        if length(module_stack)>0
+            Core.eval(mod, :(using $()))
+        end
     end
 
     for m in setups
         Core.eval(mod, Expr(:using, Expr(:., :., :., nameof(test_setup_module_set.setupmodule), m)))
     end
+
+    @warn "run_testitem" filepath use_default_usings setups package_name original_code line column test_setup_module_set module_stack
 
     code = string('\n'^line, ' '^column, original_code)
 
@@ -143,12 +153,15 @@ function run_tests(path; filter=nothing, verbose=false)
         end
 
         if length(errors_for_file) > 0
-            @warn "Error in your test item or test setup definition" file errors=errors_for_file
+            # replace ranges with locations in
+            errors_decorated::Vector{Any} = map((e) -> (error=e.error, range = (from=compute_line_column(content, e.range[1]), to=compute_line_column(content, e.range[2])))
+            , errors_for_file)
+            @warn "Error in your test item or test setup definition" file errors=errors_decorated
             error("There is an error in your test item or test setup definition, we are aborting.")
         end
 
         if length(testitems_for_file) > 0
-            testitems[file] = [(filename=file, code=content[i.code_range], name=i.name, option_tags=i.option_tags, option_default_imports=i.option_default_imports, option_setup=i.option_setup, compute_line_column(content, i.code_range.start)...) for i in testitems_for_file]
+            testitems[file] = [(filename=file, code=content[i.code_range], name=i.name, option_tags=i.option_tags, option_default_imports=i.option_default_imports, option_setup=i.option_setup, module_stack=i.module_stack, compute_line_column(content, i.code_range.start)...) for i in testitems_for_file]
         end
         for i in testsetups_for_file
             testsetups[i.name] = (filename=file, code=content[i.code_range], name=Symbol(i.name), compute_line_column(content, i.code_range.start)...)
@@ -182,7 +195,7 @@ function run_tests(path; filter=nothing, verbose=false)
                 end
             end
             Test.push_testset(testset(testitem.name; verbose=verbose))
-            run_testitem(testitem.filename, testitem.option_default_imports, testitem.option_setup, package_name, testitem.code, testitem.line, testitem.column, test_setup_module_set)
+            run_testitem(testitem.filename, testitem.option_default_imports, testitem.option_setup, package_name, testitem.code, testitem.line, testitem.column, test_setup_module_set, testitem.module_stack)
             Test.finish(Test.pop_testset())
         end
         Test.finish(Test.pop_testset())
