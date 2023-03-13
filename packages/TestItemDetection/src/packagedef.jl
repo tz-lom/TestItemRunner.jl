@@ -4,7 +4,7 @@ include("vendored_code.jl")
 function determine_module_stack(node, modules=[])
     if CSTParser.hasparent(node)
         if node.head == :module
-            pushfirst!(modules, node.args[2].val)
+            pushfirst!(modules, Symbol(node.args[2].val))
         end
         # pushfirst!(modules, node.head)
         return determine_module_stack(CSTParser.parentof(node), modules)

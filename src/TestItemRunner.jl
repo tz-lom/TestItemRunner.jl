@@ -63,9 +63,10 @@ end
     @test TestItemRunner.compute_line_column(content, 11) == (line=3, column=3)
 end
 
-# @testitem "inline_tests_should_have_access_to_its_module" begin
-#     @test compute_line_column(content, 1) == (line=1, column=1)
-# end
+@testitem "inline_tests_should_have_access_to_its_module" begin
+    content = "abc\ndef\nghi"
+    @test compute_line_column(content, 1) == (line=1, column=1)
+end
 
 struct TestSetupModuleSet
     setupmodule::Module
@@ -95,8 +96,21 @@ function run_testitem(filepath, use_default_usings, setups, package_name, origin
             Core.eval(mod, :(using $(Symbol(package_name))))
         end
 
-        if length(module_stack)>0
-            Core.eval(mod, :(using $()))
+        @warn "" package_name
+
+        if length(module_stack)>10
+            # module_full_path = reduce((l,r) -> push!(l, :., Symbol(r)), module_stack[2:end], init=[Symbol(module_stack[1])])
+            # module_full_path = map(Symbol, module_stack)
+            # @warn "kek" module_full_path
+            module_object = Base.eval(mod, Expr(:block, 
+                Expr(:using, Expr(:., module_stack...)),
+                module_stack[end]
+            ))
+            @warn "M" module_object
+            names_to_import = filter((name) -> isdefined(module_object, name) &&  !startswith(string(name), '#'), names(module_object, all=true))
+            # imports = reduce((l,r) -> push!(l, Symbol(","), r), names_to_import[2:end], init=[names_to_import[1]])
+            @warn "Imports" names_to_import
+            Core.eval(mod, Expr(:using, Expr(:(:), Expr(:., module_stack...) , map((x) -> Expr(:., x), names_to_import)...)))
         end
     end
 
